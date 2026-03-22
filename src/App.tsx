@@ -1,27 +1,59 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import LoginPage from "./pages/LoginPage";
+import DashboardLayout from "./components/DashboardLayout";
+import DashboardPage from "./pages/DashboardPage";
+import MembersPage from "./pages/MembersPage";
+import AttendancePage from "./pages/AttendancePage";
+import DailyBreadPage from "./pages/DailyBreadPage";
+import EvangelismPage from "./pages/EvangelismPage";
+import TestsPage from "./pages/TestsPage";
+import DepartmentPage from "./pages/DepartmentPage";
+import MinistryPage from "./pages/MinistryPage";
+import ReportsPage from "./pages/ReportsPage";
+import AnnouncementsPage from "./pages/AnnouncementsPage";
+import SettingsPage from "./pages/SettingsPage";
+import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/" replace />;
+  return <>{children}</>;
+};
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  <AuthProvider>
     <TooltipProvider>
       <Toaster />
-      <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="/" element={<LoginPage />} />
+          <Route
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/members" element={<MembersPage />} />
+            <Route path="/departments/:deptId" element={<DepartmentPage />} />
+            <Route path="/attendance" element={<AttendancePage />} />
+            <Route path="/daily-bread" element={<DailyBreadPage />} />
+            <Route path="/evangelism" element={<EvangelismPage />} />
+            <Route path="/tests" element={<TestsPage />} />
+            <Route path="/ministries/:ministryId" element={<MinistryPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/announcements" element={<AnnouncementsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
-  </QueryClientProvider>
+  </AuthProvider>
 );
 
 export default App;
