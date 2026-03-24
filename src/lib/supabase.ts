@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder_key';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables');
+if (supabaseUrl === 'https://placeholder.supabase.co') {
+  console.warn('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in GitHub Secrets/Env. Using placeholder values.');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
