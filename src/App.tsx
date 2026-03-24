@@ -45,7 +45,7 @@ const App = () => (
   <AuthProvider>
     <TooltipProvider>
       <Toaster />
-      <BrowserRouter>
+      <BrowserRouter basename="/Sea--Of--Glass/">
         <Routes>
           <Route path="/" element={<PortalPage />} />
           <Route path="/login" element={<LoginPage />} />
