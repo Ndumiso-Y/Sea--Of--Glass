@@ -1,11 +1,14 @@
 import React from 'react';
-import { members, attendance, dailyBread, evangelismProspects } from '@/data/seed';
+import { useMembers } from '@/hooks/useMembers';
+import { useAttendance } from '@/hooks/useAttendance';
+import { useDailyBread, getWeekDayDates } from '@/hooks/useDailyBread';
+import { useEvangelism } from '@/hooks/useEvangelism';
 import { Users, ClipboardCheck, BookOpen, TrendingUp } from 'lucide-react';
 
 const stages = ['bucket', 'pickup', 'bb', 'read_for_centre', 'centre', 'passover'] as const;
 const stageLabels: Record<string, string> = {
   bucket: 'Bucket', pickup: 'Pick Up', bb: 'BB',
-  read_for_centre: 'Read for Centre', centre: 'Centre', passover: 'Passover'
+  read_for_centre: 'Read for Centre', centre: 'Centre', passover: 'Passover',
 };
 const departments = [
   { key: 'MG', label: "Men's Group" },
@@ -15,26 +18,40 @@ const departments = [
   { key: 'STUDENTS', label: 'Students' },
 ];
 
-const DashboardPage: React.FC = () => {
-  const totalMembers = members.length;
+function getCurrentWeekMonday(): string {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diff);
+  return monday.toISOString().split('T')[0];
+}
 
-  // Attendance calc (latest week)
-  const latestWeek = '2024-03-25';
-  const weekAtt = attendance.filter(a => a.service_date === latestWeek);
-  const physical = weekAtt.filter(a => a.attendance_type === 'physical').length;
-  const online = weekAtt.filter(a => a.attendance_type === 'online').length;
-  const total = weekAtt.filter(a => a.attendance_type !== 'exempted').length;
+const DashboardPage: React.FC = () => {
+  const weekStart = getCurrentWeekMonday();
+  const weekDays = getWeekDayDates(weekStart);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const weekEndStr = weekEnd.toISOString().split('T')[0];
+
+  const { data: memberData } = useMembers();
+  const { data: attData } = useAttendance({ startDate: weekStart, endDate: weekEndStr });
+  const { data: dbData } = useDailyBread({ weekStart });
+  const { data: evData } = useEvangelism();
+
+  const totalMembers = (memberData ?? []).length;
+
+  const physical = (attData ?? []).filter(a => a.attendance_type === 'physical').length;
+  const online = (attData ?? []).filter(a => a.attendance_type === 'online').length;
+  const total = (attData ?? []).filter(a => a.attendance_type !== 'exempted').length;
   const attPct = total > 0 ? Math.round(((physical + online) / total) * 100) : 0;
   const physPct = total > 0 ? Math.round((physical / total) * 100) : 0;
   const onlPct = total > 0 ? Math.round((online / total) * 100) : 0;
 
-  // Daily bread
-  const weekDb = dailyBread.filter(d => d.date.startsWith(latestWeek));
-  const dbWatched = weekDb.filter(d => d.watched).length;
-  const dbPct = weekDb.length > 0 ? Math.round((dbWatched / weekDb.length) * 100) : 0;
+  const dbWatched = (dbData ?? []).filter(d => d.watched).length;
+  const dbPct = (dbData ?? []).length > 0 ? Math.round((dbWatched / (dbData ?? []).length) * 100) : 0;
 
-  // Evangelism
-  const activeProspects = evangelismProspects.filter(p => p.stage !== 'passover').length;
+  const activeProspects = (evData ?? []).filter(p => p.stage !== 'passover').length;
 
   const statCards = [
     { label: 'Total Members', value: totalMembers, icon: <Users size={20} />, color: 'text-primary' },
@@ -43,70 +60,67 @@ const DashboardPage: React.FC = () => {
     { label: 'Active Prospects', value: activeProspects, icon: <TrendingUp size={20} />, color: 'text-primary' },
   ];
 
-  // Dept summary
   const deptSummary = departments.map(dept => {
-    const deptMembers = members.filter(m => m.department === dept.key);
-    const deptIds = deptMembers.map(m => m.id);
-    const deptAtt = weekAtt.filter(a => deptIds.includes(a.member_id));
+    const memberCount = (memberData ?? []).filter(m => m.department === dept.key).length;
+    const deptAtt = (attData ?? []).filter(a => a.member_department === dept.key);
     const wedAtt = deptAtt.filter(a => a.service_type.startsWith('wed') && (a.attendance_type === 'physical' || a.attendance_type === 'online'));
     const sunAtt = deptAtt.filter(a => a.service_type === 'sun' && (a.attendance_type === 'physical' || a.attendance_type === 'online'));
-    const deptDb = weekDb.filter(d => deptIds.includes(d.member_id));
+    const deptDb = (dbData ?? []).filter(d => d.member_department === dept.key);
     const dbP = deptDb.length > 0 ? Math.round((deptDb.filter(d => d.watched).length / deptDb.length) * 100) : 0;
-    return { ...dept, wedCount: wedAtt.length, sunCount: sunAtt.length, dbPct: dbP, memberCount: deptMembers.length };
+    return { ...dept, memberCount, wedCount: wedAtt.length, sunCount: sunAtt.length, dbPct: dbP };
   });
 
-  // Funnel
   const funnelData = stages.map(s => ({
     stage: stageLabels[s],
-    count: evangelismProspects.filter(p => p.stage === s).length,
+    count: (evData ?? []).filter(p => p.stage === s).length,
   }));
   const maxFunnel = Math.max(...funnelData.map(f => f.count), 1);
 
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-8">
-        <h1 className="font-heading text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="font-body text-sm text-muted-foreground mt-1">Church overview — week of March 25, 2024</p>
+        <h1 className="font-heading text-[24px] font-bold text-black">Dashboard</h1>
+        <p className="font-body text-[14px] text-muted-foreground mt-1">Church overview — week of {weekStart}</p>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {statCards.map(card => (
-          <div key={card.label} className="bg-card rounded-xl border border-border p-5">
+          <div key={card.label} className="bg-white rounded-[8px] border border-[#E5E7EB] p-5">
             <div className="flex items-center justify-between mb-3">
-              <span className="font-body text-xs text-muted-foreground uppercase tracking-wide">{card.label}</span>
+              <span className="font-body text-[11px] text-[#6B7280] uppercase tracking-wider">{card.label}</span>
               <span className={card.color}>{card.icon}</span>
             </div>
-            <p className="font-heading text-2xl font-bold text-foreground">{card.value}</p>
-            {card.sub && <p className="font-body text-xs text-muted-foreground mt-1">{card.sub}</p>}
+            <p className="font-heading text-[32px] font-bold text-black leading-none">{card.value}</p>
+            {card.sub && <p className="font-body text-[13px] text-muted-foreground mt-2">{card.sub}</p>}
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Department summary */}
-        <div className="bg-card rounded-xl border border-border p-5">
-          <h2 className="font-heading text-base font-semibold text-foreground mb-4">Department Summary</h2>
+        <div className="bg-white rounded-[8px] border border-[#E5E7EB] p-5">
+          <h2 className="font-heading text-[16px] font-bold text-black mb-4">Department Summary</h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm font-body">
+            <table className="w-full text-[13px] font-body">
               <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-2 text-muted-foreground font-medium text-xs">Department</th>
-                  <th className="text-center py-2 text-muted-foreground font-medium text-xs">Members</th>
-                  <th className="text-center py-2 text-muted-foreground font-medium text-xs">Wed</th>
-                  <th className="text-center py-2 text-muted-foreground font-medium text-xs">Sun</th>
-                  <th className="text-center py-2 text-muted-foreground font-medium text-xs">DB %</th>
+                <tr className="border-b border-[#E5E7EB]">
+                  <th className="h-[44px] px-2 text-left align-middle font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Department</th>
+                  <th className="h-[44px] px-2 text-center align-middle font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Members</th>
+                  <th className="h-[44px] px-2 text-center align-middle font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Wed</th>
+                  <th className="h-[44px] px-2 text-center align-middle font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Sun</th>
+                  <th className="h-[44px] px-2 text-center align-middle font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">DB %</th>
                 </tr>
               </thead>
               <tbody>
-                {deptSummary.map(d => (
-                  <tr key={d.key} className="border-b border-border/50">
-                    <td className="py-2.5 font-medium text-foreground">{d.label}</td>
-                    <td className="text-center text-muted-foreground">{d.memberCount}</td>
-                    <td className="text-center text-muted-foreground">{d.wedCount}</td>
-                    <td className="text-center text-muted-foreground">{d.sunCount}</td>
-                    <td className="text-center">
-                      <span className={`font-medium ${d.dbPct >= 70 ? 'text-success' : d.dbPct >= 50 ? 'text-warning' : 'text-destructive'}`}>{d.dbPct}%</span>
+                {deptSummary.map((d, idx) => (
+                  <tr key={d.key} className={`border-b border-[#E5E7EB] h-[44px] ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAFA]'}`}>
+                    <td className="px-2 font-medium text-black">{d.label}</td>
+                    <td className="px-2 text-center text-black">{d.memberCount}</td>
+                    <td className="px-2 text-center text-black">{d.wedCount}</td>
+                    <td className="px-2 text-center text-black">{d.sunCount}</td>
+                    <td className="px-2 text-center">
+                      <span className={`font-medium ${d.dbPct >= 70 ? 'text-[#16a34a]' : d.dbPct >= 50 ? 'text-[#ea580c]' : 'text-[#dc2626]'}`}>{d.dbPct}%</span>
                     </td>
                   </tr>
                 ))}
@@ -116,18 +130,18 @@ const DashboardPage: React.FC = () => {
         </div>
 
         {/* Evangelism funnel */}
-        <div className="bg-card rounded-xl border border-border p-5">
-          <h2 className="font-heading text-base font-semibold text-foreground mb-4">Evangelism Pipeline</h2>
-          <div className="space-y-3">
+        <div className="bg-white rounded-[8px] border border-[#E5E7EB] p-5">
+          <h2 className="font-heading text-[16px] font-bold text-black mb-4">Evangelism Pipeline</h2>
+          <div className="space-y-4">
             {funnelData.map(f => (
               <div key={f.stage}>
-                <div className="flex justify-between text-xs font-body mb-1">
-                  <span className="text-muted-foreground">{f.stage}</span>
-                  <span className="font-medium text-foreground">{f.count}</span>
+                <div className="flex justify-between text-[13px] font-body mb-2">
+                  <span className="text-[#6B7280]">{f.stage}</span>
+                  <span className="font-medium text-black">{f.count}</span>
                 </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div className="h-2 bg-[#E5E7EB] rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-primary rounded-full transition-all"
+                    className="h-full bg-[#de3163] rounded-full transition-all"
                     style={{ width: `${(f.count / maxFunnel) * 100}%` }}
                   />
                 </div>

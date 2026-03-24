@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
-import { members, attendance, dailyBread, evangelismProspects, testResults, dutyHistory } from '@/data/seed';
 import { useAuth } from '@/contexts/AuthContext';
+import { useMembers } from '@/hooks/useMembers';
+import { useAttendance } from '@/hooks/useAttendance';
+import { useDailyBread } from '@/hooks/useDailyBread';
+import { useEvangelism } from '@/hooks/useEvangelism';
+import { useTestResults } from '@/hooks/useTestResults';
+import { useDutyHistory } from '@/hooks/useDutyHistory';
 import { Member } from '@/data/types';
 import { Search, Plus, X, Camera } from 'lucide-react';
 
@@ -13,54 +18,176 @@ const statusColors: Record<string, string> = {
   Dropout: 'bg-foreground/10 text-foreground',
 };
 
-const gaColors: Record<string, string> = {
-  Member: 'bg-muted text-muted-foreground',
-  Deacon: 'bg-foreground/10 text-foreground',
-  Instructor: 'bg-primary/10 text-primary',
-  Evangelist: 'bg-primary text-primary-foreground',
+function getInitials(name: string) {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase();
+}
+
+/* ---- MemberProfile sub-component: hooks run only when this mounts ---- */
+interface MemberProfileProps {
+  member: Member;
+  onClose: () => void;
+}
+
+const MemberProfile: React.FC<MemberProfileProps> = ({ member, onClose }) => {
+  const { user } = useAuth();
+  const [profileTab, setProfileTab] = useState('overview');
+
+  const { data: attData } = useAttendance({ memberId: member.id });
+  const { data: dbData } = useDailyBread({ memberId: member.id });
+  const { data: testData } = useTestResults({ memberId: member.id });
+  const { data: historyData } = useDutyHistory(member.id);
+  const { data: evData } = useEvangelism();
+
+  // Compute stats
+  const mAtt = attData ?? [];
+  const present = mAtt.filter(a => a.attendance_type === 'physical' || a.attendance_type === 'online').length;
+  const nonExemptAtt = mAtt.filter(a => a.attendance_type !== 'exempted').length;
+  const attPct = nonExemptAtt > 0 ? Math.round((present / nonExemptAtt) * 100) : 0;
+
+  const mDb = dbData ?? [];
+  const watched = mDb.filter(d => d.watched).length;
+  const dbPct = mDb.length > 0 ? Math.round((watched / mDb.length) * 100) : 0;
+
+  const prospect = (evData ?? []).find(p => p.linked_member_id === member.id);
+  const mTests = testData ?? [];
+  const passed = mTests.filter(t => t.pass).length;
+
+  const memberHistory = (historyData ?? []).slice().sort(
+    (a, b) => new Date(b.appointed_date).getTime() - new Date(a.appointed_date).getTime()
+  );
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+      <div className="fixed right-0 top-0 bottom-0 w-[480px] bg-white border-l border-[#E5E7EB] z-50 overflow-y-auto animate-slide-in-right">
+        <div className="p-8">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-8">
+            <div className="flex items-center gap-5">
+              <div className="relative group">
+                <div className="w-[80px] h-[80px] rounded-full bg-black flex items-center justify-center text-white text-[24px] font-heading font-bold overflow-hidden">
+                  {member.profile_image_url ? (
+                    <img src={member.profile_image_url} alt={member.name} className="w-full h-full object-cover" />
+                  ) : (
+                    getInitials(member.name)
+                  )}
+                </div>
+                {user?.role === 'CULTURE' && (
+                  <div className="absolute inset-0 bg-black/50 rounded-full hidden group-hover:flex items-center justify-center cursor-pointer">
+                    <Camera size={24} className="text-white" />
+                  </div>
+                )}
+              </div>
+              <div>
+                <h2 className="font-heading text-[20px] font-semibold text-black">{member.name}</h2>
+                <p className="font-mono text-[13px] text-[#6B7280] mt-0.5">{member.scj_number}</p>
+                <div className="flex gap-2 mt-2">
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#E5E7EB]/50 text-[#6B7280] font-semibold">{member.duty_title}</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#de3163] text-white font-semibold">{member.ga_status}</span>
+                  {member.is_pastor && <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#10B981] text-white font-semibold">Pastor</span>}
+                </div>
+              </div>
+            </div>
+            <button onClick={onClose} className="text-[#6B7280] hover:text-black mt-2">
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Metrics */}
+          <div className="grid grid-cols-4 gap-3 mb-8">
+            {[
+              { label: 'Attendance %', val: `${attPct}%` },
+              { label: 'Daily Bread %', val: `${dbPct}%` },
+              { label: 'Evangelism Stage', val: prospect?.stage ?? 'N/A' },
+              { label: 'Tests Passed', val: `${passed}/${mTests.length}` },
+            ].map(card => (
+              <div key={card.label} className="bg-white rounded-[8px] border border-[#E5E7EB] p-3">
+                <p className="text-[10px] text-[#6B7280] uppercase tracking-wide font-heading truncate">{card.label}</p>
+                <p className="font-heading text-[20px] font-bold text-black mt-1">{card.val}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-6 border-b border-[#E5E7EB] mb-6 overflow-x-auto">
+            {['overview', 'attendance', 'evangelism', 'tests', 'duty history', 'exemptions'].map(t => (
+              <button
+                key={t}
+                onClick={() => setProfileTab(t)}
+                className={`pb-2 text-[13px] font-heading font-normal whitespace-nowrap transition-colors border-b-2 ${
+                  profileTab === t ? 'border-[#de3163] text-black' : 'border-transparent text-[#6B7280] hover:text-black'
+                }`}
+              >
+                {t.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          {profileTab === 'overview' && (
+            <div className="space-y-4 text-[13px] font-body">
+              <div className="flex flex-col"><span className="text-[#6B7280] mb-1">Email</span><span className="text-black">{member.email}</span></div>
+              <div className="flex flex-col"><span className="text-[#6B7280] mb-1">Phone</span><span className="text-black">{member.phone}</span></div>
+              <div className="flex flex-col"><span className="text-[#6B7280] mb-1">Telegram</span><span className="text-black">{member.telegram_handle}</span></div>
+              <div className="flex flex-col"><span className="text-[#6B7280] mb-1">Department / Cell</span><span className="text-black">{member.department} · {member.cell}</span></div>
+              <div className="flex flex-col"><span className="text-[#6B7280] mb-1">Joined</span><span className="text-black">{member.created_at?.split('T')[0]}</span></div>
+            </div>
+          )}
+
+          {profileTab === 'duty history' && (
+            <div className="relative pl-3 space-y-6">
+              {memberHistory.map(h => (
+                <div key={h.id} className={`pl-4 border-l-[3px] ${h.is_active ? 'border-[#de3163]' : 'border-[#E5E7EB]'}`}>
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="font-heading text-[14px] font-semibold text-black">{h.role}</span>
+                    {(user?.role === 'SMN' && !h.is_active) && (
+                      <button className="text-[12px] font-body text-[#de3163] hover:underline">Edit end date</button>
+                    )}
+                  </div>
+                  <p className="text-[13px] text-[#6B7280] font-body">{h.department} · {h.cell}{h.ministry_id ? ' · Ministry' : ''}</p>
+                  <p className="text-[12px] text-[#6B7280] font-body mt-2">
+                    {h.appointed_date} — {h.ended_date ?? 'Current'}
+                  </p>
+                  <p className="text-[12px] text-[#6B7280] font-body">
+                    Appointed by: {h.appointer_name ?? 'Unknown'} · Approved by: {h.approver_name ?? 'Unknown'}
+                  </p>
+                  {h.reason_for_change && <p className="text-[12px] text-[#6B7280] font-body mt-1 italic">Reason: {h.reason_for_change}</p>}
+                </div>
+              ))}
+              {memberHistory.length === 0 && <p className="text-[13px] text-[#6B7280] font-body">No duty history recorded.</p>}
+            </div>
+          )}
+
+          {profileTab !== 'overview' && profileTab !== 'duty history' && (
+            <p className="text-[13px] text-[#6B7280] font-body">Detailed {profileTab} records will be shown here.</p>
+          )}
+        </div>
+      </div>
+    </>
+  );
 };
 
+/* ---- Main MembersPage ---- */
 const MembersPage: React.FC = () => {
-  const { user } = useAuth();
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-  const [profileTab, setProfileTab] = useState('overview');
 
-  const filteredMembers = members.filter(m => {
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) || m.scj_number.toLowerCase().includes(search.toLowerCase());
-    const matchDept = deptFilter === 'all' || m.department === deptFilter;
-    return matchSearch && matchDept;
+  const { data: membersData, loading } = useMembers({
+    department: deptFilter !== 'all' ? deptFilter : undefined,
+    search: search || undefined,
   });
 
-  const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase();
-
-  const getMemberStats = (memberId: string) => {
-    const mAtt = attendance.filter(a => a.member_id === memberId);
-    const present = mAtt.filter(a => a.attendance_type === 'physical' || a.attendance_type === 'online').length;
-    const attPct = mAtt.length > 0 ? Math.round((present / mAtt.length) * 100) : 0;
-
-    const mDb = dailyBread.filter(d => d.member_id === memberId);
-    const watched = mDb.filter(d => d.watched).length;
-    const dbPct = mDb.length > 0 ? Math.round((watched / mDb.length) * 100) : 0;
-
-    const prospect = evangelismProspects.find(p => p.linked_member_id === memberId);
-    const tests = testResults.filter(t => t.member_id === memberId);
-    const passed = tests.filter(t => t.pass).length;
-
-    return { attPct, dbPct, evangelismStage: prospect?.stage || 'N/A', testsPassed: `${passed}/${tests.length}` };
-  };
-
-  const memberHistory = selectedMember ? dutyHistory.filter(h => h.member_id === selectedMember.id).sort((a, b) => new Date(b.appointed_date).getTime() - new Date(a.appointed_date).getTime()) : [];
+  const filteredMembers = membersData ?? [];
 
   return (
     <div className="p-6 lg:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Members</h1>
-          <p className="font-body text-sm text-muted-foreground mt-1">{filteredMembers.length} members</p>
+          <h1 className="font-heading text-[24px] font-bold text-black">Members</h1>
+          <p className="font-body text-[14px] text-muted-foreground mt-1">{filteredMembers.length} members</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-heading text-sm font-semibold hover:bg-sidebar-accent-hover transition-colors">
+        <button className="flex items-center gap-2 px-4 h-[36px] bg-[#de3163] text-white rounded-[8px] font-heading text-[13px] font-semibold transition-colors">
           <Plus size={16} /> Add Member
         </button>
       </div>
@@ -68,19 +195,19 @@ const MembersPage: React.FC = () => {
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7280]" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search members..."
-            className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-card text-foreground font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full pl-9 pr-3 h-[36px] rounded-[8px] border border-[#E5E7EB] bg-white text-black font-body text-[13px] focus:outline-none focus:border-[#de3163]"
           />
         </div>
         <select
           value={deptFilter}
           onChange={e => setDeptFilter(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-input bg-card text-foreground font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="px-3 h-[36px] rounded-[8px] border border-[#E5E7EB] bg-white text-black font-body text-[13px] focus:outline-none focus:border-[#de3163]"
         >
           <option value="all">All Departments</option>
           <option value="MG">Men's Group</option>
@@ -92,194 +219,64 @@ const MembersPage: React.FC = () => {
       </div>
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <div className="bg-white rounded-[8px] border border-[#E5E7EB] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm font-body">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Member</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden md:table-cell">SCJ Number</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Department</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden lg:table-cell">Cell</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden lg:table-cell">Role</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden md:table-cell">GA Status</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMembers.map(m => (
-                <tr
-                  key={m.id}
-                  onClick={() => { setSelectedMember(m); setProfileTab('overview'); }}
-                  className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
-                >
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center text-card text-xs font-heading font-semibold flex-shrink-0">
-                        {getInitials(m.name)}
-                      </div>
-                      <div>
-                        <span className="font-medium text-foreground">{m.name}</span>
-                        {m.is_pastor && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-warning/10 text-warning font-medium">Pastor</span>}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-muted-foreground font-mono text-xs hidden md:table-cell">{m.scj_number}</td>
-                  <td className="py-3 px-4 text-muted-foreground hidden sm:table-cell">{m.department}</td>
-                  <td className="py-3 px-4 text-muted-foreground hidden lg:table-cell">{m.cell}</td>
-                  <td className="py-3 px-4 hidden lg:table-cell">
-                    <span className="text-[11px] px-2 py-0.5 rounded bg-foreground text-card font-medium">{m.duty_title}</span>
-                  </td>
-                  <td className="py-3 px-4 hidden md:table-cell">
-                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${gaColors[m.ga_status]}`}>{m.ga_status}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${statusColors[m.status]}`}>{m.status}</span>
-                  </td>
+          {loading ? (
+            <div className="text-center py-12 text-[#6B7280] font-body text-sm">Loading...</div>
+          ) : (
+            <table className="w-full text-[13px] font-body bg-white">
+              <thead>
+                <tr className="border-b border-[#E5E7EB]">
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Member</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280] hidden md:table-cell">SCJ Number</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280] hidden sm:table-cell">Department</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280] hidden lg:table-cell">Cell</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280] hidden lg:table-cell">Role</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280] hidden md:table-cell">GA Status</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredMembers.map((m, idx) => (
+                  <tr
+                    key={m.id}
+                    onClick={() => setSelectedMember(m)}
+                    className={`border-b border-[#E5E7EB] h-[44px] cursor-pointer transition-colors hover:bg-muted/50 ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAFA]'}`}
+                  >
+                    <td className="px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-full bg-black flex items-center justify-center text-white text-[11px] font-heading font-semibold flex-shrink-0">
+                          {getInitials(m.name)}
+                        </div>
+                        <div>
+                          <span className="font-medium text-black">{m.name}</span>
+                          {m.is_pastor && <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-[#10B981] text-white font-semibold">Pastor</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 text-[#6B7280] font-mono text-[13px] hidden md:table-cell">{m.scj_number}</td>
+                    <td className="px-4 text-[#6B7280] hidden sm:table-cell">{m.department}</td>
+                    <td className="px-4 text-[#6B7280] hidden lg:table-cell">{m.cell}</td>
+                    <td className="px-4 hidden lg:table-cell">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#E5E7EB]/50 text-[#6B7280] font-semibold">{m.duty_title}</span>
+                    </td>
+                    <td className="px-4 hidden md:table-cell">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#de3163] text-white font-semibold">{m.ga_status}</span>
+                    </td>
+                    <td className="px-4">
+                      <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${statusColors[m.status] ?? ''}`}>{m.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
       {/* Member profile slide-in */}
       {selectedMember && (
-        <>
-          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setSelectedMember(null)} />
-          <div className="fixed right-0 top-0 bottom-0 w-full max-w-[480px] bg-card border-l border-border z-50 overflow-y-auto animate-slide-in-right">
-            <div className="p-6">
-              {/* Header */}
-              <div className="flex items-start justify-between mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <div className="w-20 h-20 rounded-full bg-foreground flex items-center justify-center text-card text-xl font-heading font-bold">
-                      {getInitials(selectedMember.name)}
-                    </div>
-                    {user?.role === 'CULTURE' && (
-                      <button className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                        <Camera size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <div>
-                    <h2 className="font-heading text-xl font-semibold text-foreground">{selectedMember.name}</h2>
-                    <p className="font-mono text-xs text-muted-foreground mt-0.5">{selectedMember.scj_number}</p>
-                    <div className="flex gap-2 mt-2">
-                      <span className="text-[11px] px-2 py-0.5 rounded bg-foreground text-card font-medium">{selectedMember.duty_title}</span>
-                      <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${gaColors[selectedMember.ga_status]}`}>{selectedMember.ga_status}</span>
-                      {selectedMember.is_pastor && <span className="text-[11px] px-2 py-0.5 rounded bg-warning/10 text-warning font-medium">Pastor</span>}
-                    </div>
-                  </div>
-                </div>
-                <button onClick={() => setSelectedMember(null)} className="text-muted-foreground hover:text-foreground">
-                  <X size={20} />
-                </button>
-              </div>
-
-              {/* Metrics */}
-              {(() => {
-                const stats = getMemberStats(selectedMember.id);
-                return (
-                  <div className="grid grid-cols-2 gap-3 mb-6">
-                    <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-heading">Attendance</p>
-                      <p className="font-heading text-lg font-bold text-foreground mt-1">{stats.attPct}%</p>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-heading">Daily Bread</p>
-                      <p className="font-heading text-lg font-bold text-foreground mt-1">{stats.dbPct}%</p>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-heading">Evangelism</p>
-                      <p className="font-heading text-lg font-bold text-foreground mt-1 capitalize">{stats.evangelismStage}</p>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-heading">Tests</p>
-                      <p className="font-heading text-lg font-bold text-foreground mt-1">{stats.testsPassed}</p>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Tabs */}
-              <div className="flex gap-1 border-b border-border mb-4 overflow-x-auto">
-                {['overview', 'attendance', 'evangelism', 'tests', 'duty_history', 'exemptions'].map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setProfileTab(tab)}
-                    className={`px-3 py-2 text-xs font-heading font-medium whitespace-nowrap transition-colors border-b-2 ${
-                      profileTab === tab ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {tab === 'duty_history' ? 'Duty History' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tab content */}
-              {profileTab === 'overview' && (
-                <div className="space-y-3 text-sm font-body">
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Email</span>
-                    <span className="text-foreground">{selectedMember.email}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Phone</span>
-                    <span className="text-foreground">{selectedMember.phone}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Telegram</span>
-                    <span className="text-foreground">{selectedMember.telegram_handle}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Department</span>
-                    <span className="text-foreground">{selectedMember.department}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Cell</span>
-                    <span className="text-foreground">{selectedMember.cell}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-muted-foreground">Joined</span>
-                    <span className="text-foreground">{selectedMember.created_at}</span>
-                  </div>
-                </div>
-              )}
-
-              {profileTab === 'duty_history' && (user?.role === 'GSN' || user?.role === 'SMN' || user?.role === 'HJN') && (
-                <div className="space-y-3">
-                  {memberHistory.map(h => {
-                    const isActive = h.ended_date === null;
-                    const appointer = members.find(m => m.id === h.appointed_by);
-                    const approver = members.find(m => m.id === h.approved_by);
-                    return (
-                      <div key={h.id} className={`rounded-lg border p-3 ${isActive ? 'border-l-4 border-l-primary border-border' : 'border-border'}`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-heading text-sm font-semibold text-foreground">{h.role}</span>
-                          {isActive && <span className="text-[10px] px-2 py-0.5 rounded bg-primary text-primary-foreground font-medium">Current</span>}
-                        </div>
-                        <p className="text-xs text-muted-foreground font-body">{h.department} · {h.cell}{h.ministry_id ? ` · Ministry` : ''}</p>
-                        <p className="text-xs text-muted-foreground font-body mt-1">
-                          {h.appointed_date} — {h.ended_date || 'Present'}
-                        </p>
-                        <p className="text-xs text-muted-foreground font-body mt-1">
-                          Appointed by: {appointer?.name || 'Unknown'} · Approved by: {approver?.name || 'Unknown'}
-                        </p>
-                        {h.reason_for_change && <p className="text-xs text-muted-foreground/70 font-body mt-1 italic">{h.reason_for_change}</p>}
-                      </div>
-                    );
-                  })}
-                  {memberHistory.length === 0 && <p className="text-sm text-muted-foreground font-body">No duty history recorded.</p>}
-                </div>
-              )}
-
-              {profileTab !== 'overview' && profileTab !== 'duty_history' && (
-                <p className="text-sm text-muted-foreground font-body">Detailed {profileTab} records will be shown here.</p>
-              )}
-            </div>
-          </div>
-        </>
+        <MemberProfile member={selectedMember} onClose={() => setSelectedMember(null)} />
       )}
     </div>
   );

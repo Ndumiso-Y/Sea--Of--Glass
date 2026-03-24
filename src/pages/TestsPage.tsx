@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
-import { testResults, members } from '@/data/seed';
+import { useTestResults } from '@/hooks/useTestResults';
 import { Plus, Check, X as XIcon } from 'lucide-react';
 
 const TestsPage: React.FC = () => {
   const [deptFilter, setDeptFilter] = useState('all');
   const [testFilter, setTestFilter] = useState('all');
 
-  const testNames = [...new Set(testResults.map(t => t.test_name))];
-
-  const filtered = testResults.filter(t => {
-    const member = members.find(m => m.id === t.member_id);
-    const matchDept = deptFilter === 'all' || member?.department === deptFilter;
-    const matchTest = testFilter === 'all' || t.test_name === testFilter;
-    return matchDept && matchTest;
+  const { data, loading } = useTestResults({
+    department: deptFilter !== 'all' ? deptFilter : undefined,
   });
+
+  const testNames = [...new Set((data ?? []).map(t => t.test_name))].sort();
+  const filtered = (data ?? []).filter(t => testFilter === 'all' || t.test_name === testFilter);
 
   return (
     <div className="p-6 lg:p-8">
@@ -28,7 +26,7 @@ const TestsPage: React.FC = () => {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} className="px-3 py-2 rounded-lg border border-input bg-card text-foreground font-body text-sm">
+        <select value={deptFilter} onChange={e => { setDeptFilter(e.target.value); setTestFilter('all'); }} className="px-3 py-2 rounded-lg border border-input bg-card text-foreground font-body text-sm">
           <option value="all">All Departments</option>
           <option value="MG">MG</option><option value="WG">WG</option><option value="YG">YG</option><option value="SNG">SNG</option>
         </select>
@@ -40,23 +38,26 @@ const TestsPage: React.FC = () => {
 
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm font-body">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Member</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Test</th>
-                <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Date</th>
-                <th className="text-center py-3 px-4 text-muted-foreground font-medium text-xs">Score</th>
-                <th className="text-center py-3 px-4 text-muted-foreground font-medium text-xs">Pass</th>
-                <th className="text-center py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Rewrite</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(t => {
-                const member = members.find(m => m.id === t.member_id);
-                return (
+          {loading ? (
+            <div className="text-center py-12 text-muted-foreground font-body text-sm">Loading...</div>
+          ) : (
+            <table className="w-full text-sm font-body">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Member</th>
+                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Dept</th>
+                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Test</th>
+                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Date</th>
+                  <th className="text-center py-3 px-4 text-muted-foreground font-medium text-xs">Score</th>
+                  <th className="text-center py-3 px-4 text-muted-foreground font-medium text-xs">Pass</th>
+                  <th className="text-center py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Rewrite</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(t => (
                   <tr key={t.id} className="border-b border-border/50">
-                    <td className="py-3 px-4 font-medium text-foreground">{member?.name}</td>
+                    <td className="py-3 px-4 font-medium text-foreground">{t.member_name}</td>
+                    <td className="py-3 px-4 text-muted-foreground hidden sm:table-cell">{t.member_department}</td>
                     <td className="py-3 px-4 text-muted-foreground">{t.test_name}</td>
                     <td className="py-3 px-4 text-muted-foreground hidden sm:table-cell">{t.date_written}</td>
                     <td className="text-center py-3 px-4 font-medium text-foreground">{t.score}%</td>
@@ -75,10 +76,10 @@ const TestsPage: React.FC = () => {
                       )}
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

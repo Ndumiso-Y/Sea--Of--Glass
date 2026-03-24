@@ -1,33 +1,50 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
-import { members, attendance, dailyBread, evangelismProspects } from '@/data/seed';
+import { useMembers } from '@/hooks/useMembers';
+import { useAttendance } from '@/hooks/useAttendance';
+import { useDailyBread, getWeekDayDates } from '@/hooks/useDailyBread';
+import { useEvangelism } from '@/hooks/useEvangelism';
 import { Users, ClipboardCheck, BookOpen, TrendingUp } from 'lucide-react';
 
 const deptNames: Record<string, string> = {
   MG: "Men's Group", WG: "Women's Group", YG: 'Youth Group', SNG: 'Seniors Group', STUDENTS: 'Students Group',
 };
 
+function getCurrentWeekMonday(): string {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diff);
+  return monday.toISOString().split('T')[0];
+}
+
 const DepartmentPage: React.FC = () => {
   const { deptId } = useParams<{ deptId: string }>();
-  const deptMembers = members.filter(m => m.department === deptId);
-  const deptIds = deptMembers.map(m => m.id);
 
-  const latestWeek = '2024-03-25';
-  const weekAtt = attendance.filter(a => a.service_date === latestWeek && deptIds.includes(a.member_id));
-  const present = weekAtt.filter(a => a.attendance_type === 'physical' || a.attendance_type === 'online').length;
-  const total = weekAtt.filter(a => a.attendance_type !== 'exempted').length;
+  const weekStart = getCurrentWeekMonday();
+  const weekDays = getWeekDayDates(weekStart);
+  const weekEnd = weekDays[weekDays.length - 1];
+
+  const { data: membersData } = useMembers({ department: deptId });
+  const { data: attData } = useAttendance({ startDate: weekStart, endDate: weekEnd, department: deptId });
+  const { data: dbData } = useDailyBread({ weekStart, department: deptId });
+  const { data: evData } = useEvangelism({ department: deptId });
+
+  const deptMembers = membersData ?? [];
+
+  const present = (attData ?? []).filter(a => a.attendance_type === 'physical' || a.attendance_type === 'online').length;
+  const total = (attData ?? []).filter(a => a.attendance_type !== 'exempted').length;
   const attPct = total > 0 ? Math.round((present / total) * 100) : 0;
 
-  const weekDb = dailyBread.filter(d => d.date.startsWith(latestWeek) && deptIds.includes(d.member_id));
-  const dbPct = weekDb.length > 0 ? Math.round((weekDb.filter(d => d.watched).length / weekDb.length) * 100) : 0;
-
-  const prospects = evangelismProspects.filter(p => p.department === deptId);
+  const dbWatched = (dbData ?? []).filter(d => d.watched).length;
+  const dbPct = (dbData ?? []).length > 0 ? Math.round((dbWatched / (dbData ?? []).length) * 100) : 0;
 
   const stats = [
     { label: 'Members', value: deptMembers.length, icon: <Users size={18} />, color: 'text-primary' },
     { label: 'Attendance', value: `${attPct}%`, icon: <ClipboardCheck size={18} />, color: 'text-success' },
     { label: 'Daily Bread', value: `${dbPct}%`, icon: <BookOpen size={18} />, color: 'text-warning' },
-    { label: 'Prospects', value: prospects.length, icon: <TrendingUp size={18} />, color: 'text-primary' },
+    { label: 'Prospects', value: (evData ?? []).length, icon: <TrendingUp size={18} />, color: 'text-primary' },
   ];
 
   return (

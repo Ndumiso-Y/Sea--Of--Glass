@@ -1,40 +1,48 @@
 import React, { useState } from 'react';
-import { evangelismProspects, members } from '@/data/seed';
+import { useEvangelism } from '@/hooks/useEvangelism';
 import { EvangelismStage } from '@/data/types';
+import { Check } from 'lucide-react';
 
 const stages: EvangelismStage[] = ['bucket', 'pickup', 'bb', 'read_for_centre', 'centre', 'passover'];
 const stageLabels: Record<EvangelismStage, string> = {
   bucket: 'Bucket', pickup: 'Pick Up', bb: 'BB',
-  read_for_centre: 'Read for Centre', centre: 'Centre', passover: 'Passover',
+  read_for_centre: 'Read', centre: 'Centre', passover: 'Passover',
 };
-const stageColors: Record<EvangelismStage, string> = {
-  bucket: 'bg-muted-foreground', pickup: 'bg-warning', bb: 'bg-blue-500',
-  read_for_centre: 'bg-purple-500', centre: 'bg-primary', passover: 'bg-success',
-};
+
+const stageBarColors = [
+  'bg-[#0A0A0A]',
+  'bg-[#34111d]',
+  'bg-[#5e1931]',
+  'bg-[#882044]',
+  'bg-[#b32958]',
+  'bg-[#de3163]'
+];
 
 const EvangelismPage: React.FC = () => {
   const [tab, setTab] = useState<'individual' | 'rollup'>('individual');
+  const { data, loading } = useEvangelism();
+  const prospects = data ?? [];
 
-  const daysInStage = (dateStr: string) => {
+  const getDaysInStage = (dateStr: string) => {
     const entered = new Date(dateStr);
-    const now = new Date('2024-03-25');
+    const now = new Date();
     return Math.floor((now.getTime() - entered.getTime()) / (1000 * 60 * 60 * 24));
   };
 
   return (
     <div className="p-6 lg:p-8">
       <div className="mb-6">
-        <h1 className="font-heading text-2xl font-bold text-foreground">Evangelism Pipeline</h1>
-        <p className="font-body text-sm text-muted-foreground mt-1">Track prospect progress through the pipeline</p>
+        <h1 className="font-heading text-[24px] font-bold text-black">Evangelism Pipeline</h1>
+        <p className="font-body text-[14px] text-[#6B7280] mt-1">Track prospect progress through the pipeline</p>
       </div>
 
-      <div className="flex gap-1 mb-6">
+      <div className="flex gap-4 border-b border-[#E5E7EB] mb-6">
         {(['individual', 'rollup'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-heading font-medium transition-colors ${
-              tab === t ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+            className={`pb-2 text-[13px] font-heading font-normal transition-colors border-b-2 ${
+              tab === t ? 'border-[#de3163] text-black' : 'border-transparent text-[#6B7280] hover:text-black'
             }`}
           >
             {t === 'individual' ? 'Individual' : 'Cell / Dept Rollup'}
@@ -42,40 +50,52 @@ const EvangelismPage: React.FC = () => {
         ))}
       </div>
 
-      {tab === 'individual' && (
-        <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm font-body">
+      {loading ? (
+        <div className="text-center py-12 text-[#6B7280] font-body text-sm">Loading...</div>
+      ) : tab === 'individual' ? (
+        <div className="bg-white rounded-[8px] border border-[#E5E7EB] overflow-hidden">
+          <div className="overflow-x-auto pb-6">
+            <table className="w-full text-[13px] font-body bg-white min-w-[800px]">
               <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Prospect</th>
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Linked Member</th>
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Stage</th>
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs hidden md:table-cell">Progress</th>
-                  <th className="text-right py-3 px-4 text-muted-foreground font-medium text-xs hidden sm:table-cell">Days in Stage</th>
+                <tr className="border-b border-[#E5E7EB]">
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Prospect</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280]">Linked Member</th>
+                  <th className="h-[44px] text-left px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280] w-[400px]">Progress</th>
+                  <th className="h-[44px] text-right px-4 font-heading text-[11px] font-normal uppercase tracking-[0.08em] text-[#6B7280] w-[120px]">Days in Stage</th>
                 </tr>
               </thead>
               <tbody>
-                {evangelismProspects.map(p => {
-                  const linked = members.find(m => m.id === p.linked_member_id);
-                  const stageIdx = stages.indexOf(p.stage);
+                {prospects.map((p, idx) => {
+                  const currentStageIdx = stages.indexOf(p.stage);
+                  const days = getDaysInStage(p.stage_entered_date);
+                  const daysColor = days > 60 ? 'text-[#DC2626]' : days > 30 ? 'text-[#ea580c]' : 'text-black';
+
                   return (
-                    <tr key={p.id} className="border-b border-border/50">
-                      <td className="py-3 px-4 font-medium text-foreground">{p.prospect_name}</td>
-                      <td className="py-3 px-4 text-muted-foreground hidden sm:table-cell">{linked?.name}</td>
-                      <td className="py-3 px-4">
-                        <span className={`text-[11px] px-2 py-0.5 rounded text-white font-medium ${stageColors[p.stage]}`}>
-                          {stageLabels[p.stage]}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 hidden md:table-cell">
-                        <div className="flex gap-0.5">
-                          {stages.map((s, i) => (
-                            <div key={s} className={`h-1.5 flex-1 rounded-full ${i <= stageIdx ? stageColors[p.stage] : 'bg-border'}`} />
-                          ))}
+                    <tr key={p.id} className={`border-b border-[#E5E7EB] h-[80px] hover:bg-muted/50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-[#FAFAFA]'}`}>
+                      <td className="px-4 font-medium text-black align-middle">{p.prospect_name}</td>
+                      <td className="px-4 text-[#6B7280] align-middle">{p.linked_member_name ?? '—'}</td>
+                      <td className="px-4 align-middle">
+                        <div className="flex items-start w-full relative pt-2">
+                          {stages.map((s, i) => {
+                            const isCompleted = i < currentStageIdx;
+                            const isCurrent = i === currentStageIdx;
+                            return (
+                              <div key={s} className="flex-1 flex flex-col relative items-center group">
+                                {i < stages.length - 1 && (
+                                  <div className={`absolute top-[12px] left-1/2 w-full h-[1px] ${isCompleted ? 'bg-[#0A0A0A]' : 'bg-[#E5E7EB]'}`} />
+                                )}
+                                <div className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-heading font-medium ${isCompleted ? 'bg-[#0A0A0A] text-white' : isCurrent ? 'bg-[#de3163] text-white' : 'border border-[#E5E7EB] bg-white text-[#6B7280]'}`}>
+                                  {isCompleted ? <Check size={12} strokeWidth={3} /> : i + 1}
+                                </div>
+                                <span className={`text-[11px] font-body mt-2 text-center whitespace-nowrap ${isCurrent ? 'text-black font-semibold' : 'text-[#6B7280]'}`}>
+                                  {stageLabels[s]}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-right text-muted-foreground hidden sm:table-cell">{daysInStage(p.stage_entered_date)}d</td>
+                      <td className={`px-4 text-right font-medium align-middle ${daysColor}`}>{days} <span className="text-[11px] font-normal text-[#6B7280] ml-0.5">days</span></td>
                     </tr>
                   );
                 })}
@@ -83,38 +103,53 @@ const EvangelismPage: React.FC = () => {
             </table>
           </div>
         </div>
-      )}
-
-      {tab === 'rollup' && (
-        <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm font-body">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="text-left py-3 px-4 text-muted-foreground font-medium text-xs">Department</th>
-                  {stages.map(s => (
-                    <th key={s} className="text-center py-3 px-4 text-muted-foreground font-medium text-xs">{stageLabels[s]}</th>
-                  ))}
-                  <th className="text-center py-3 px-4 text-muted-foreground font-medium text-xs">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {['MG', 'WG', 'YG', 'SNG'].map(dept => {
-                  const deptProspects = evangelismProspects.filter(p => p.department === dept);
-                  return (
-                    <tr key={dept} className="border-b border-border/50">
-                      <td className="py-3 px-4 font-medium text-foreground">{dept}</td>
-                      {stages.map(s => (
-                        <td key={s} className="text-center py-3 px-4 text-muted-foreground">
-                          {deptProspects.filter(p => p.stage === s).length || '—'}
-                        </td>
-                      ))}
-                      <td className="text-center py-3 px-4 font-medium text-foreground">{deptProspects.length}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      ) : (
+        <div className="bg-white rounded-[8px] border border-[#E5E7EB] overflow-hidden p-6 max-w-[800px]">
+          <h2 className="font-heading text-[16px] font-bold text-black mb-6">Department Evangelism Rollup</h2>
+          <div className="space-y-6">
+            {['MG', 'WG', 'YG', 'SNG'].map(dept => {
+              const deptProspects = prospects.filter(p => p.department === dept);
+              const total = deptProspects.length;
+              return (
+                <div key={dept}>
+                  <div className="flex justify-between items-end mb-2">
+                    <span className="font-heading text-[13px] font-semibold text-black">{dept}</span>
+                    <span className="font-body text-[12px] text-[#6B7280]">Total: {total}</span>
+                  </div>
+                  <div className="h-8 flex rounded-[4px] overflow-hidden bg-[#FAFAFA] border border-[#E5E7EB]">
+                    {total === 0 ? (
+                      <div className="w-full h-full flex items-center justify-center text-[11px] text-[#6B7280] font-body">No prospects</div>
+                    ) : (
+                      stages.map((s, i) => {
+                        const count = deptProspects.filter(p => p.stage === s).length;
+                        if (count === 0) return null;
+                        const widthPct = (count / total) * 100;
+                        return (
+                          <div
+                            key={s}
+                            style={{ width: `${widthPct}%` }}
+                            className={`${stageBarColors[i]} h-full flex items-center justify-center transition-all group relative border-r border-white/20 last:border-0`}
+                          >
+                            {widthPct > 8 && <span className="text-[11px] font-heading font-medium text-white/90">{count}</span>}
+                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-black text-white px-2 py-1 rounded text-[10px] font-body hidden group-hover:block whitespace-nowrap z-10">
+                              {stageLabels[s]}: {count}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-8 flex flex-wrap gap-4 pt-6 border-t border-[#E5E7EB]">
+            {stages.map((s, i) => (
+              <div key={s} className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${stageBarColors[i]}`} />
+                <span className="text-[11px] font-body text-[#6B7280]">{stageLabels[s]}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

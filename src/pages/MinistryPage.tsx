@@ -1,13 +1,27 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
-import { ministries, members, financeClaims, constructionProjects, evangelismProspects } from '@/data/seed';
+import { useMinistries } from '@/hooks/useMinistries';
+import { useFinanceClaims } from '@/hooks/useFinanceClaims';
+import { useConstructionProjects } from '@/hooks/useConstructionProjects';
+import { useEvangelism } from '@/hooks/useEvangelism';
 import { Lock, DollarSign, Briefcase } from 'lucide-react';
 
 const MinistryPage: React.FC = () => {
   const { ministryId } = useParams<{ ministryId: string }>();
-  const ministry = ministries.find(m => m.id === ministryId);
+  const { data: ministriesData, loading } = useMinistries();
+  const { data: claimsData } = useFinanceClaims();
+  const { data: projectsData } = useConstructionProjects();
+  const { data: evData } = useEvangelism();
 
-  if (!ministry) return <div className="p-8"><p className="text-muted-foreground font-body">Ministry not found.</p></div>;
+  if (loading) {
+    return <div className="p-8 text-muted-foreground font-body text-sm">Loading...</div>;
+  }
+
+  const ministry = (ministriesData ?? []).find(m => m.id === ministryId);
+
+  if (!ministry) {
+    return <div className="p-8"><p className="text-muted-foreground font-body">Ministry not found.</p></div>;
+  }
 
   if (!ministry.is_active) {
     return (
@@ -19,7 +33,7 @@ const MinistryPage: React.FC = () => {
     );
   }
 
-  const bjn = members.find(m => m.id === ministry.bjn_member_id);
+  const prospects = evData ?? [];
 
   return (
     <div className="p-6 lg:p-8">
@@ -29,7 +43,7 @@ const MinistryPage: React.FC = () => {
           <h1 className="font-heading text-2xl font-bold text-foreground">{ministry.name}</h1>
         </div>
         <p className="font-body text-sm text-muted-foreground">
-          BJN: {bjn?.name || 'Unassigned'} · {ministry.abbreviation}
+          BJN: {ministry.bjn_name ?? 'Unassigned'} · {ministry.abbreviation}
         </p>
       </div>
 
@@ -50,12 +64,11 @@ const MinistryPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {financeClaims.map(c => {
-                  const sub = members.find(m => m.id === c.submitted_by);
+                {(claimsData ?? []).map(c => {
                   const statusCl = c.status === 'approved' ? 'bg-success/10 text-success' : c.status === 'paid' ? 'bg-primary/10 text-primary' : 'bg-warning/10 text-warning';
                   return (
                     <tr key={c.id} className="border-b border-border/50">
-                      <td className="py-3 px-4 text-foreground">{sub?.name}</td>
+                      <td className="py-3 px-4 text-foreground">{c.submitter_name ?? '—'}</td>
                       <td className="py-3 px-4 text-muted-foreground">{c.category}</td>
                       <td className="py-3 px-4 text-right font-medium text-foreground">R {c.amount.toLocaleString()}</td>
                       <td className="py-3 px-4 text-center"><span className={`text-[11px] px-2 py-0.5 rounded font-medium capitalize ${statusCl}`}>{c.status}</span></td>
@@ -85,7 +98,7 @@ const MinistryPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {constructionProjects.map(p => (
+                {(projectsData ?? []).map(p => (
                   <tr key={p.id} className="border-b border-border/50">
                     <td className="py-3 px-4 font-medium text-foreground">{p.name}</td>
                     <td className="py-3 px-4"><span className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">{p.status}</span></td>
@@ -103,12 +116,12 @@ const MinistryPage: React.FC = () => {
       {ministry.abbreviation === 'EVAN' && (
         <div className="bg-card rounded-xl border border-border p-5">
           <h2 className="font-heading text-base font-semibold text-foreground mb-4">All Departments Evangelism</h2>
-          <p className="font-body text-sm text-muted-foreground">Total prospects: {evangelismProspects.length}</p>
+          <p className="font-body text-sm text-muted-foreground">Total prospects: {prospects.length}</p>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mt-4">
-            {(['bucket','pickup','bb','read_for_centre','centre','passover'] as const).map(s => (
+            {(['bucket', 'pickup', 'bb', 'read_for_centre', 'centre', 'passover'] as const).map(s => (
               <div key={s} className="bg-muted/50 rounded-lg p-3 text-center">
                 <p className="text-xs text-muted-foreground font-body capitalize">{s.replace(/_/g, ' ')}</p>
-                <p className="font-heading text-lg font-bold text-foreground mt-1">{evangelismProspects.filter(p => p.stage === s).length}</p>
+                <p className="font-heading text-lg font-bold text-foreground mt-1">{prospects.filter(p => p.stage === s).length}</p>
               </div>
             ))}
           </div>
